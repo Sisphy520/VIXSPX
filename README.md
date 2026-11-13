@@ -2,6 +2,8 @@
 
 A small, reproducible research project on the relationship between the CBOE Volatility Index (VIX) and S&P 500 returns, focused on **predictive** power: does a high VIX today tell us anything about future returns, and what happens after extreme VIX spikes?
 
+# I am the bone of sword, Unlimited Blade Works!!
+
 Data: daily closes of `^GSPC` and `^VIX` from Yahoo Finance, 1990 to present (~9,300 trading days).
 
 ## Project layout
