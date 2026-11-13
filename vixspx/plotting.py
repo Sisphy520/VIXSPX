@@ -3,6 +3,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 from .config import * # I changed it to * so that it imports all the constants we need
 from prediction import vix_momentum_interaction
