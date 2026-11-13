@@ -2,7 +2,9 @@
 
 A small, reproducible research project on the relationship between the CBOE Volatility Index (VIX) and S&P 500 returns, focused on **predictive** power: does a high VIX today tell us anything about future returns, and what happens after extreme VIX spikes?
 
-# I am the bone of sword, Unlimited Blade Works!!
+# (NEW) S&P 500 momentum as a moderator:
+
+Does S&P 500 price momentum moderate the relationship between VIX and future S&P 500 returns?
 
 Data: daily closes of `^GSPC` and `^VIX` from Yahoo Finance, 1990 to present (~9,300 trading days).
 
@@ -54,6 +56,9 @@ events = find_events(d, threshold=30, cooldown=60)
 - **VIX vs. realized volatility:** adds 21-day realized volatility as a second regressor to see which carries the information (a proxy for the variance risk premium).
 - **Out-of-sample test:** expanding window (first 10 years as training), compared with the historical-mean forecast. The last `h` observations are dropped from training to avoid look-ahead.
 - **Event study:** an event is the first day VIX ≥ threshold (30 or 40). A new event requires VIX to stay below the threshold for more than 60 trading days (de-clustering). Significance uses an event-level bootstrap.
+- **(New)Interaction regression:** f_h ~ ln(VIX) + Momentum_21 + ln(VIX) × Momentum_21, using mean-centered predictors and Newey–West (HAC) standard errors (maxlags = 2h) to account for autocorrelation from overlapping forward-return windows. The interaction term tests whether past 21-day S&P 500 momentum moderates the relationship between VIX and future S&P 500 returns.
+- **(New)Regression Model:** 
+Rₜ,ₜ₊ₕ = β₀ + β₁ ln(VIXₜ) + β₂ M₂₁,ₜ + β₃ (ln(VIXₜ) × M₂₁,ₜ) + εₜ
 
 ## Main findings
 
