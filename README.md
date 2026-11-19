@@ -24,6 +24,8 @@ VIXSPX/
 │   └── run_events.py       # extreme-VIX event study -> outputs/events.png
 ├── notebook/
 │   └── run_regression.ipynb  # VIX x momentum interaction -> outputs/interaction.png
+├── pyproject.toml          # makes vixspx pip-installable
+├── environment.yml         # conda environment
 ├── data/data.csv           # saved SPX / VIX closes
 ├── outputs/                # generated figures
 └── requirements.txt
@@ -32,7 +34,13 @@ VIXSPX/
 ## Setup and usage
 
 ```bash
-pip install -r requirements.txt
+conda env create -f environment.yml   # creates the "vixspx" env and installs the package (editable)
+conda activate vixspx
+```
+
+Without conda: `pip install -e .` (add `".[notebook]"` for Jupyter). `requirements.txt` is kept for a plain `pip install -r`.
+
+```bash
 python scripts/download_data.py     # optional: refresh data (a CSV is already included)
 python scripts/run_prediction.py
 python scripts/run_events.py
