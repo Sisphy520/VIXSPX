@@ -1,22 +1,21 @@
 # VIX vs. S&P 500: Can the VIX Predict Returns?
 
-A small, reproducible research project on the relationship between the CBOE Volatility Index (VIX) and S&P 500 returns, focused on **predictive** power: does a high VIX today tell us anything about future returns, and what happens after extreme VIX spikes?
+A small, reproducible research project on the relationship between the CBOE Volatility Index (VIX) and S&P 500 returns, focused on predictive power: does a high VIX today tell us anything about future returns, and what happens after extreme VIX spikes?
 
-# (NEW) S&P 500 momentum as a moderator:
-
-Does S&P 500 price momentum moderate the relationship between VIX and future S&P 500 returns?
+A second question: does S&P 500 price momentum moderate the relationship between VIX and future returns (a VIX × momentum interaction regression)?
 
 Data: daily closes of `^GSPC` and `^VIX` from Yahoo Finance, 1990 to present (~9,300 trading days).
 
 ## Project layout
 
 ```
-Finance/
+VIXSPX/
 ├── vixspx/                 # the package
 │   ├── config.py           # paths and constants (cwd-independent)
 │   ├── data.py             # download_data(), load_data()
 │   ├── features.py         # add_features(): log VIX, realized vol, forward returns
-│   ├── prediction.py       # predictive regressions, buckets, out-of-sample R²
+│   ├── prediction.py       # predictive regressions, buckets, out-of-sample R²,
+│   │                       #   vix_momentum_interaction()
 │   ├── events.py           # de-clustered event study, bootstrap
 │   ├── montecarlo.py       # Monte Carlo null test (simulated "VIX is useless" worlds)
 │   └── plotting.py         # figures
@@ -25,6 +24,15 @@ Finance/
 │   ├── run_prediction.py   # predictive analysis -> outputs/predict.png
 │   ├── run_events.py       # extreme-VIX event study -> outputs/events.png
 │   └── run_montecarlo.py   # Monte Carlo null test -> outputs/montecarlo.png
+│   └── plotting.py         # figures, incl. plot_interaction()
+├── scripts/
+│   ├── download_data.py    # fetch data -> data/data.csv
+│   ├── run_prediction.py   # predictive analysis -> outputs/predict.png
+│   └── run_events.py       # extreme-VIX event study -> outputs/events.png
+├── notebook/
+│   └── run_regression.ipynb  # VIX x momentum interaction -> outputs/interaction.png
+├── pyproject.toml          # makes vixspx pip-installable
+├── environment.yml         # conda environment
 ├── data/data.csv           # saved SPX / VIX closes
 ├── outputs/                # generated figures
 └── requirements.txt
@@ -33,11 +41,18 @@ Finance/
 ## Setup and usage
 
 ```bash
-pip install -r requirements.txt
+conda env create -f environment.yml   # creates the "vixspx" env and installs the package (editable)
+conda activate vixspx
+```
+
+Without conda: `pip install -e .` (add `".[notebook]"` for Jupyter). `requirements.txt` is kept for a plain `pip install -r`.
+
+```bash
 python scripts/download_data.py     # optional: refresh data (a CSV is already included)
 python scripts/run_prediction.py
 python scripts/run_events.py
 python scripts/run_montecarlo.py    # 5,000 simulated paths; options: --sims, --ar, --block, --seed
+jupyter notebook notebook/run_regression.ipynb   # interaction regression and figure
 ```
 
 Scripts resolve paths relative to the project, so they can be run from any directory.
@@ -50,11 +65,18 @@ from vixspx import load_data, add_features, predictive_regression, find_events
 d = add_features(load_data(), horizons=[1, 5, 21, 63])
 print(predictive_regression(d, [1, 5, 21, 63]))
 events = find_events(d, threshold=30, cooldown=60)
+
+# VIX x momentum interaction (not re-exported at package level)
+from vixspx.prediction import vix_momentum_interaction
+from vixspx.plotting import plot_interaction
+print(vix_momentum_interaction(d, h=21).summary())
+plot_interaction(d, [1, 5, 21, 63])
 ```
 
 ## Figure conventions
 
 All figures are written to `outputs/` and follow the same rules (see `vixspx/plotting.py`): English only, a descriptive title, both axes labelled with units, and a legend explaining every series and reference line. New plots should follow the same rules.
+The notebook adds the project folder to `sys.path` (it assumes `~/Desktop/PSY 46050 Project/VIXSPX`), so edit `INPUTDIR` in its first cell if the project lives elsewhere.
 
 ## Methodology
 
@@ -63,9 +85,11 @@ All figures are written to `outputs/` and follow the same rules (see `vixspx/plo
 - **VIX vs. realized volatility:** adds 21-day realized volatility as a second regressor to see which carries the information (a proxy for the variance risk premium).
 - **Out-of-sample test:** expanding window (first 10 years as training), compared with the historical-mean forecast. The last `h` observations are dropped from training to avoid look-ahead.
 - **Event study:** an event is the first day VIX ≥ threshold (30 or 40). A new event requires VIX to stay below the threshold for more than 60 trading days (de-clustering). Significance uses an event-level bootstrap.
-- **(New)Interaction regression:** f_h ~ ln(VIX) + Momentum_21 + ln(VIX) × Momentum_21, using mean-centered predictors and Newey–West (HAC) standard errors (maxlags = 2h) to account for autocorrelation from overlapping forward-return windows. The interaction term tests whether past 21-day S&P 500 momentum moderates the relationship between VIX and future S&P 500 returns.
-- **(New)Regression Model:** 
-Rₜ,ₜ₊ₕ = β₀ + β₁ ln(VIXₜ) + β₂ M₂₁,ₜ + β₃ (ln(VIXₜ) × M₂₁,ₜ) + εₜ
+- **Interaction regression:** `f_h ~ ln(VIX) + M21 + ln(VIX) × M21`, where `M21 = 100 · ln(SPX_t / SPX_{t-21})` is past 21-day momentum. Predictors are mean-centered, and standard errors are Newey-West (HAC) with `maxlags = 2h`. The interaction term tests whether momentum moderates the VIX-return relationship.
+
+  R(t,t+h) = β₀ + β₁ ln(VIX_t) + β₂ M21_t + β₃ (ln(VIX_t) × M21_t) + ε_t
+
+- **Interaction figure:** the left panel shows predicted 21-day returns across VIX levels (5th to 95th percentile) at low (25th pct) and high (75th pct) momentum. The right panel shows the interaction coefficient with a 95% HAC CI for each horizon.
 
 ## Monte Carlo null test
 
@@ -110,6 +134,7 @@ Rₜ,ₜ₊ₕ = β₀ + β₁ ln(VIXₜ) + β₂ M₂₁,ₜ + β₃ (ln(VIXₜ
 | Buy on the first VIX ≥ 30? | No clear edge. 22 events; mean 63-day return +2.3% vs +2.1% unconditional; bootstrap 95% CI [-2.5, 6.5] contains the unconditional mean. Average 63-day max drawdown after the event is −7.4%. |
 | Buy on the first VIX ≥ 40? | Better (63-day mean +6.9%, 90% positive), but only 10 events. |
 | Does a Monte Carlo null test change the picture? | No. Monte Carlo p-values are 0.20 to 0.38 across horizons; the "significant" momentum interactions are what noise produces (family-wise p = 0.41). |
+| Does momentum moderate the VIX-return link? | No. At h = 21 the interaction is near zero and insignificant (β = −0.029, p = .815); the model R² is about 0.6%. The low- and high-momentum lines do not cross. |
 | Why do daily and event results differ? | Daily samples are dominated by mid/late-crisis high-VIX days, after much of the fall has happened. The first breach is often still early in the decline. |
 
 Takeaway: there is a weak "high VIX is followed by higher returns" effect, but it appears late in stress episodes rather than at the first spike, is not stable, and is not statistically reliable out of sample.
