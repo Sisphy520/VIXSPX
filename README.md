@@ -17,6 +17,13 @@ VIXSPX/
 │   ├── prediction.py       # predictive regressions, buckets, out-of-sample R²,
 │   │                       #   vix_momentum_interaction()
 │   ├── events.py           # de-clustered event study, bootstrap
+│   ├── montecarlo.py       # Monte Carlo null test (simulated "VIX is useless" worlds)
+│   └── plotting.py         # figures
+├── scripts/
+│   ├── download_data.py    # fetch data -> data/data.csv
+│   ├── run_prediction.py   # predictive analysis -> outputs/predict.png
+│   ├── run_events.py       # extreme-VIX event study -> outputs/events.png
+│   └── run_montecarlo.py   # Monte Carlo null test -> outputs/montecarlo.png
 │   └── plotting.py         # figures, incl. plot_interaction()
 ├── scripts/
 │   ├── download_data.py    # fetch data -> data/data.csv
@@ -44,6 +51,7 @@ Without conda: `pip install -e .` (add `".[notebook]"` for Jupyter). `requiremen
 python scripts/download_data.py     # optional: refresh data (a CSV is already included)
 python scripts/run_prediction.py
 python scripts/run_events.py
+python scripts/run_montecarlo.py    # 5,000 simulated paths; options: --sims, --ar, --block, --seed
 jupyter notebook notebook/run_regression.ipynb   # interaction regression and figure
 ```
 
@@ -65,6 +73,9 @@ print(vix_momentum_interaction(d, h=21).summary())
 plot_interaction(d, [1, 5, 21, 63])
 ```
 
+## Figure conventions
+
+All figures are written to `outputs/` and follow the same rules (see `vixspx/plotting.py`): English only, a descriptive title, both axes labelled with units, and a legend explaining every series and reference line. New plots should follow the same rules.
 The notebook adds the project folder to `sys.path` (it assumes `~/Desktop/PSY 46050 Project/VIXSPX`), so edit `INPUTDIR` in its first cell if the project lives elsewhere.
 
 ## Methodology
@@ -80,6 +91,38 @@ The notebook adds the project folder to `sys.path` (it assumes `~/Desktop/PSY 46
 
 - **Interaction figure:** the left panel shows predicted 21-day returns across VIX levels (5th to 95th percentile) at low (25th pct) and high (75th pct) momentum. The right panel shows the interaction coefficient with a 95% HAC CI for each horizon.
 
+## Monte Carlo null test
+
+**Question:** if the VIX (and past momentum) had *no* predictive power, how often would we still see results as strong as the ones we observed?
+
+**Idea (coin-flip analogy):** to judge whether 58 heads in 100 flips is unusual, simulate thousands of fair-coin experiments and count how often 58 or more heads appear. Here the "fair coin" is a world in which the VIX does not predict returns.
+
+**How the "VIX is useless" world is built** (`vixspx/montecarlo.py`):
+
+1. Estimate from the real data: the mean daily log return `mu`; an AR(p) model for ln(VIX) (default p = 1, persistence about 0.98); and the leftover daily shocks, kept as pairs `(e_t, u_t)` for the return and the VIX.
+2. Resample the shock pairs with replacement (i.i.d. pairs). Keeping the pairs together preserves the strong negative link between returns and VIX shocks (correlation about -0.72), which causes a small-sample bias in predictive regressions (Stambaugh bias).
+3. Build a fake history of the same length: `return_t = mu + e_t` (no dependence on lagged VIX) and `ln VIX_t = c + phi * ln VIX_{t-1} + u_t`.
+4. On each fake history, run exactly the same regressions as on the real data (same horizons, same momentum windows, same Newey-West errors).
+5. Repeat 5,000 times and see where the real statistic falls in the simulated distribution (Monte Carlo p-value). For the momentum grid, record the largest absolute t-statistic across all 28 tests in each simulated history, which corrects for trying many combinations.
+
+**Block length matters.** With a block bootstrap (`--block 21`), each block also carries the real lead-lag relationship between return and VIX shocks, so genuine predictability leaks into the "null" (null slope at h = 1 was 0.068 vs. 0.071 observed, and the test rejected 23% of the time at the nominal 5%). The default is therefore i.i.d. pairs (`--block 1`). `outputs/montecarlo_block21.png` is kept only as a diagnostic; do not use its p-values.
+
+**Momentum grid:** 7 momentum windows (5, 10, 21, 42, 63, 126, 252 trading days) x 4 horizons (1, 5, 21, 63 days) = 28 tests of the `ln(VIX) x momentum` interaction.
+
+**Results** (`outputs/montecarlo.png`, 5,000 paths):
+
+| Horizon h | Observed t (ln VIX) | Simulated 95% range under "no predictability" | Monte Carlo p |
+|---|---|---|---|
+| 1 day | 1.30 | [-1.86, 2.03] | 0.20 |
+| 5 days | 1.21 | [-2.02, 2.24] | 0.27 |
+| 21 days | 1.26 | [-2.03, 2.30] | 0.26 |
+| 63 days | 1.01 | [-2.02, 2.43] | 0.38 |
+
+- The observed t-statistics sit well inside the simulated null range, so there is no evidence that the VIX predicts returns.
+- Newey-West tests are somewhat over-sized at longer horizons in these simulations (nominal 5%, actual about 7 to 9% at h = 5, 21, 63; 4.9% at h = 1).
+- Momentum interaction: only 2 of 28 tests have |t| > 1.96 (both with 5-day momentum), about what noise alone produces (2.1 on average). The largest observed |t| is 2.14 vs. a simulated 95th percentile of 3.28; family-wise p = 0.41. For the 21-day momentum and 21-day horizon cell, t = -0.23 and Monte Carlo p = 0.84.
+- Sensitivity: replacing the AR(1) model for ln(VIX) with AR(2), AR(3) or AR(5) changes the p-values by less than 0.02. AIC/BIC prefer higher orders (the real VIX has long memory), but the conclusions do not change.
+
 ## Main findings
 
 | Question | Result |
@@ -90,6 +133,7 @@ The notebook adds the project folder to `sys.path` (it assumes `~/Desktop/PSY 46
 | What about extreme levels? | Returns are higher after VIX > 25 to 35, but this relies on few, clustered crisis periods. |
 | Buy on the first VIX ≥ 30? | No clear edge. 22 events; mean 63-day return +2.3% vs +2.1% unconditional; bootstrap 95% CI [-2.5, 6.5] contains the unconditional mean. Average 63-day max drawdown after the event is −7.4%. |
 | Buy on the first VIX ≥ 40? | Better (63-day mean +6.9%, 90% positive), but only 10 events. |
+| Does a Monte Carlo null test change the picture? | No. Monte Carlo p-values are 0.20 to 0.38 across horizons; the "significant" momentum interactions are what noise produces (family-wise p = 0.41). |
 | Does momentum moderate the VIX-return link? | No. At h = 21 the interaction is near zero and insignificant (β = −0.029, p = .815); the model R² is about 0.6%. The low- and high-momentum lines do not cross. |
 | Why do daily and event results differ? | Daily samples are dominated by mid/late-crisis high-VIX days, after much of the fall has happened. The first breach is often still early in the decline. |
 
@@ -102,6 +146,9 @@ Takeaway: there is a weak "high VIX is followed by higher returns" effect, but i
 - No transaction costs, and no tradable strategy. The VIX itself cannot be traded directly (futures/ETNs have roll costs).
 - SPX closes at 16:00 ET while the VIX closes at 16:15 ET, a small timing mismatch in daily data.
 - Yahoo Finance data is not guaranteed to be revision-free.
+- Monte Carlo: i.i.d. resampling of shock pairs drops volatility clustering, and ln(VIX) is modelled as a low-order AR process while the real VIX has longer memory (conclusions were unchanged for AR(1), (2), (3), (5)).
+- Monte Carlo: only the null "no predictability" is tested. No power analysis has been done, so "not significant" does not prove "no effect".
+- The extreme-VIX event study has not been re-tested with Monte Carlo (it still uses an event-level bootstrap).
 
 ## Possible extensions
 
@@ -109,5 +156,7 @@ Takeaway: there is a weak "high VIX is followed by higher returns" effect, but i
 - Contemporaneous and asymmetric (leverage effect) analysis of ΔVIX vs returns.
 - Regime-switching models and rolling-window betas.
 - Tradable backtests with costs.
+- Power analysis: add a small true predictability to the simulated histories and measure how often the tests detect it.
+- Placebo event study: compare the post-event returns with randomly chosen dates (same spacing rules).
 
 This project is for research and education only and is not investment advice.
